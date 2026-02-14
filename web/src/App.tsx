@@ -16,6 +16,8 @@ const mockMetrics: Metrics = {
   duration: '32 min'
 };
 
+const formatLngLat = ([lng, lat]: [number, number]) => `${lng.toFixed(6)},${lat.toFixed(6)}`;
+
 function App() {
   const [startInput, setStartInput] = useState('121.4737,31.2304');
   const [endInput, setEndInput] = useState('121.4998,31.2397');
@@ -38,6 +40,23 @@ function App() {
     setStartCoord(startInput.trim());
     setEndCoord(endInput.trim());
     setPlanNonce((previous) => previous + 1);
+  };
+
+  const handleMapSelectionChange = (selection: {
+    start?: [number, number];
+    end?: [number, number];
+  }) => {
+    if (selection.start) {
+      const nextStart = formatLngLat(selection.start);
+      setStartInput(nextStart);
+      setStartCoord(nextStart);
+    }
+
+    if (selection.end) {
+      const nextEnd = formatLngLat(selection.end);
+      setEndInput(nextEnd);
+      setEndCoord(nextEnd);
+    }
   };
 
   return (
@@ -81,7 +100,12 @@ function App() {
         </section>
 
         <section className="map-section" aria-label="map area">
-          <MapView start={startCoord} end={endCoord} planNonce={planNonce} />
+          <MapView
+            start={startCoord}
+            end={endCoord}
+            planNonce={planNonce}
+            onSelectionChange={handleMapSelectionChange}
+          />
         </section>
       </main>
     </div>
