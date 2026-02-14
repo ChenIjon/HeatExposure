@@ -209,6 +209,47 @@ body {
   font-size: 0.9rem;
 }
 
+
+.heat-legend {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 1;
+  width: 170px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.heat-legend__title {
+  margin-bottom: 0.35rem;
+}
+
+.heat-legend__bar {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    #00007f 0%,
+    #0000ff 12%,
+    #007fff 25%,
+    #00ffff 38%,
+    #7fff7f 50%,
+    #ffff00 62%,
+    #ff7f00 75%,
+    #ff0000 88%,
+    #7f0000 100%
+  );
+}
+
+.heat-legend__labels {
+  margin-top: 0.3rem;
+  display: flex;
+  justify-content: space-between;
+}
+
 @media (max-width: 900px) {
   .app-main {
     grid-template-columns: 1fr;
