@@ -103,10 +103,33 @@ body {
   gap: 0.5rem;
 }
 
-.map-canvas {
+.map-canvas-wrap {
+  position: relative;
   min-height: 460px;
+}
+
+.map-canvas {
+  height: 100%;
   border-radius: 12px;
   overflow: hidden;
+}
+
+.coord-overlay {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1;
+  min-width: 240px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.coord-overlay p {
+  margin: 0.2rem 0;
 }
 
 .map-status {
@@ -124,7 +147,7 @@ body {
     min-height: 420px;
   }
 
-  .map-canvas {
+  .map-canvas-wrap {
     min-height: 360px;
   }
 }
