@@ -1,14 +1,44 @@
-import { useEffect, useRef, useState } from 'react';
-import maplibregl, { GeoJSONSource, LngLatLike } from 'maplibre-gl';
+import { MutableRefObject, useEffect, useRef, useState } from 'react';
+import maplibregl, { GeoJSONSource, LngLatLike, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+type SelectionPayload = {
+  start?: [number, number];
+  end?: [number, number] | null;
+};
 
 type MapViewProps = {
   start: string;
   end: string;
   planNonce: number;
+  showHeatLayer: boolean;
+  heatOverlayUrl: string | null;
+  heatOverlayBounds: [[number, number], [number, number]] | null;
+  onSelectionChange?: (selection: SelectionPayload) => void;
 };
 
 const DEFAULT_CENTER: LngLatLike = [121.4737, 31.2304];
+const HEAT_SOURCE_ID = 'heat-overlay';
+const HEAT_LAYER_ID = 'heat-overlay-layer';
+
+const OSM_RASTER_STYLE = {
+  version: 8,
+  sources: {
+    'osm-raster-tiles': {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-raster-layer',
+      type: 'raster',
+      source: 'osm-raster-tiles'
+    }
+  ]
+} as const;
 
 const parseLngLat = (rawValue: string): [number, number] | null => {
   const [lngText, latText] = rawValue.split(',').map((value) => value.trim());
@@ -22,10 +52,60 @@ const parseLngLat = (rawValue: string): [number, number] | null => {
   return [lng, lat];
 };
 
-function MapView({ start, end, planNonce }: MapViewProps) {
+const toImageCoordinates = (bounds: [[number, number], [number, number]]) => {
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
+  return [
+    [minLng, maxLat],
+    [maxLng, maxLat],
+    [maxLng, minLat],
+    [minLng, minLat]
+  ] as [[number, number], [number, number], [number, number], [number, number]];
+};
+
+function MapView({
+  start,
+  end,
+  planNonce,
+  showHeatLayer,
+  heatOverlayUrl,
+  heatOverlayBounds,
+  onSelectionChange
+}: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const [statusText, setStatusText] = useState('Click "Plan route" to request a demo path from OSRM.');
+  const startMarkerRef = useRef<Marker | null>(null);
+  const endMarkerRef = useRef<Marker | null>(null);
+  const startSelectionRef = useRef<[number, number] | null>(null);
+  const endSelectionRef = useRef<[number, number] | null>(null);
+
+  const [selectedStart, setSelectedStart] = useState<[number, number] | null>(parseLngLat(start));
+  const [selectedEnd, setSelectedEnd] = useState<[number, number] | null>(parseLngLat(end));
+  const [statusText, setStatusText] = useState('Click map to pick Start and End points, then press "Plan route".');
+
+  const updateMarker = (
+    markerRef: MutableRefObject<Marker | null>,
+    map: maplibregl.Map,
+    coords: [number, number] | null,
+    color: string
+  ) => {
+    if (!coords) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+
+    if (!markerRef.current) {
+      markerRef.current = new maplibregl.Marker({ color }).setLngLat(coords).addTo(map);
+      return;
+    }
+
+    markerRef.current.setLngLat(coords);
+  };
+
+  useEffect(() => {
+    startSelectionRef.current = selectedStart;
+    endSelectionRef.current = selectedEnd;
+  }, [selectedStart, selectedEnd]);
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) {
@@ -34,7 +114,7 @@ function MapView({ start, end, planNonce }: MapViewProps) {
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: OSM_RASTER_STYLE,
       center: DEFAULT_CENTER,
       zoom: 12
     });
@@ -59,15 +139,63 @@ function MapView({ start, end, planNonce }: MapViewProps) {
           'line-width': 5
         }
       });
+
+      updateMarker(startMarkerRef, map, startSelectionRef.current, '#16a34a');
+      updateMarker(endMarkerRef, map, endSelectionRef.current, '#dc2626');
+    });
+
+    map.on('click', (event) => {
+      const nextPoint: [number, number] = [event.lngLat.lng, event.lngLat.lat];
+
+      if (!startSelectionRef.current || endSelectionRef.current) {
+        setSelectedStart(nextPoint);
+        setSelectedEnd(null);
+        onSelectionChange?.({ start: nextPoint, end: null });
+        setStatusText('Start point selected. Click again to set End point.');
+        return;
+      }
+
+      setSelectedEnd(nextPoint);
+      onSelectionChange?.({ end: nextPoint });
+      setStatusText('End point selected. Press "Plan route" to fetch route.');
     });
 
     mapRef.current = map;
 
     return () => {
+      startMarkerRef.current?.remove();
+      endMarkerRef.current?.remove();
       map.remove();
       mapRef.current = null;
+      startMarkerRef.current = null;
+      endMarkerRef.current = null;
     };
-  }, []);
+  }, [onSelectionChange]);
+
+  useEffect(() => {
+    const nextStart = parseLngLat(start);
+    const nextEnd = parseLngLat(end);
+    setSelectedStart(nextStart);
+    setSelectedEnd(nextEnd);
+  }, [start, end]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    updateMarker(startMarkerRef, map, selectedStart, '#16a34a');
+    updateMarker(endMarkerRef, map, selectedEnd, '#dc2626');
+
+    if (!selectedStart || !selectedEnd) {
+      const source = map.getSource('route') as GeoJSONSource | undefined;
+      source?.setData({
+        type: 'FeatureCollection',
+        features: []
+      });
+    }
+  }, [selectedStart, selectedEnd]);
 
   useEffect(() => {
     if (planNonce === 0) {
@@ -115,9 +243,87 @@ function MapView({ start, end, planNonce }: MapViewProps) {
     void fetchRoute();
   }, [start, end, planNonce]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !heatOverlayUrl || !heatOverlayBounds) {
+      return;
+    }
+
+    const coordinates = toImageCoordinates(heatOverlayBounds);
+    const source = map.getSource(HEAT_SOURCE_ID) as maplibregl.ImageSource | undefined;
+
+    if (!source) {
+      map.addSource(HEAT_SOURCE_ID, {
+        type: 'image',
+        url: heatOverlayUrl,
+        coordinates
+      });
+    } else {
+      source.updateImage({
+        url: heatOverlayUrl,
+        coordinates
+      });
+    }
+
+    if (!map.getLayer(HEAT_LAYER_ID)) {
+      map.addLayer({
+        id: HEAT_LAYER_ID,
+        type: 'raster',
+        source: HEAT_SOURCE_ID,
+        paint: {
+          'raster-opacity': 0.72
+        }
+      });
+    }
+
+    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+    setStatusText('Heat series overlay updated.');
+  }, [heatOverlayUrl, heatOverlayBounds, showHeatLayer]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(HEAT_LAYER_ID)) {
+      return;
+    }
+
+    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+  }, [showHeatLayer]);
+
   return (
     <div className="map-wrapper">
-      <div ref={mapContainerRef} className="map-canvas" />
+      <div className="map-canvas-wrap">
+        <div ref={mapContainerRef} className="map-canvas" />
+
+        <aside className="heat-colorbar" aria-label="UTCI discrete colorbar">
+          <h3>UTCI (°C)</h3>
+          <ul>
+            <li>
+              <span className="swatch swatch-1" />0-10
+            </li>
+            <li>
+              <span className="swatch swatch-2" />10-20
+            </li>
+            <li>
+              <span className="swatch swatch-3" />20-25
+            </li>
+            <li>
+              <span className="swatch swatch-4" />25-28
+            </li>
+            <li>
+              <span className="swatch swatch-5" />28-31
+            </li>
+            <li>
+              <span className="swatch swatch-6" />31-34
+            </li>
+            <li>
+              <span className="swatch swatch-7" />34-37
+            </li>
+            <li>
+              <span className="swatch swatch-8" />37-40
+            </li>
+          </ul>
+        </aside>
+      </div>
       <p className="map-status">{statusText}</p>
     </div>
   );
