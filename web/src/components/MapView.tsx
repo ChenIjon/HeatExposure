@@ -7,27 +7,38 @@ type SelectionPayload = {
   end?: [number, number] | null;
 };
 
-type HeatResponse = {
-  date: string;
-  hour: number;
-  bbox: [number, number, number, number];
-  tif_path: string;
-  png_path: string;
-  bounds: [[number, number], [number, number]];
-};
-
 type MapViewProps = {
   start: string;
   end: string;
   planNonce: number;
-  heatRequestNonce: number;
   showHeatLayer: boolean;
+  heatOverlayUrl: string | null;
+  heatOverlayBounds: [[number, number], [number, number]] | null;
   onSelectionChange?: (selection: SelectionPayload) => void;
 };
 
 const DEFAULT_CENTER: LngLatLike = [121.4737, 31.2304];
 const HEAT_SOURCE_ID = 'heat-overlay';
 const HEAT_LAYER_ID = 'heat-overlay-layer';
+
+const OSM_RASTER_STYLE = {
+  version: 8,
+  sources: {
+    'osm-raster-tiles': {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors'
+    }
+  },
+  layers: [
+    {
+      id: 'osm-raster-layer',
+      type: 'raster',
+      source: 'osm-raster-tiles'
+    }
+  ]
+} as const;
 
 const parseLngLat = (rawValue: string): [number, number] | null => {
   const [lngText, latText] = rawValue.split(',').map((value) => value.trim());
@@ -41,37 +52,8 @@ const parseLngLat = (rawValue: string): [number, number] | null => {
   return [lng, lat];
 };
 
-const formatLngLat = (coords: [number, number] | null) =>
-  coords ? `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}` : '--';
-
-const getBboxFromMap = (map: maplibregl.Map): [number, number, number, number] => {
-  const bounds = map.getBounds();
-  return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
-};
-
-const requestHeatMap = async (params: {
-  date: string;
-  hour: number;
-  bbox: [number, number, number, number];
-}): Promise<HeatResponse> => {
-  const { date, hour, bbox } = params;
-  const query = new URLSearchParams({
-    date,
-    hour: String(hour),
-    bbox: bbox.map((value) => value.toFixed(6)).join(',')
-  });
-
-  // TODO: replace this with real heat exposure calculation API; keep response schema.
-  const response = await fetch(`/api/heat/mock?${query.toString()}`);
-  if (!response.ok) {
-    throw new Error('Failed to request heat layer.');
-  }
-
-  return (await response.json()) as HeatResponse;
-};
-
-const toImageCoordinates = (bbox: [number, number, number, number]) => {
-  const [minLng, minLat, maxLng, maxLat] = bbox;
+const toImageCoordinates = (bounds: [[number, number], [number, number]]) => {
+  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
   return [
     [minLng, maxLat],
     [maxLng, maxLat],
@@ -84,8 +66,9 @@ function MapView({
   start,
   end,
   planNonce,
-  heatRequestNonce,
   showHeatLayer,
+  heatOverlayUrl,
+  heatOverlayBounds,
   onSelectionChange
 }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -131,7 +114,7 @@ function MapView({
 
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: OSM_RASTER_STYLE,
       center: DEFAULT_CENTER,
       zoom: 12
     });
@@ -231,7 +214,7 @@ function MapView({
     const fetchRoute = async () => {
       setStatusText('Planning route...');
 
-      const url = `https://router.project-osrm.org/route/v1/driving/${parsedStart[0]},${parsedStart[1]};${parsedEnd[0]},${parsedEnd[1]}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/walking/${parsedStart[0]},${parsedStart[1]};${parsedEnd[0]},${parsedEnd[1]}?overview=full&geometries=geojson`;
 
       try {
         const response = await fetch(url);
@@ -261,64 +244,41 @@ function MapView({
   }, [start, end, planNonce]);
 
   useEffect(() => {
-    if (heatRequestNonce === 0) {
-      return;
-    }
-
     const map = mapRef.current;
-    if (!map) {
+    if (!map || !heatOverlayUrl || !heatOverlayBounds) {
       return;
     }
 
-    const fetchHeatLayer = async () => {
-      const bbox = getBboxFromMap(map);
-      setStatusText('Loading mock heat layer...');
+    const coordinates = toImageCoordinates(heatOverlayBounds);
+    const source = map.getSource(HEAT_SOURCE_ID) as maplibregl.ImageSource | undefined;
 
-      try {
-        const payload = await requestHeatMap({
-          date: '2026-02-14',
-          hour: 13,
-          bbox
-        });
+    if (!source) {
+      map.addSource(HEAT_SOURCE_ID, {
+        type: 'image',
+        url: heatOverlayUrl,
+        coordinates
+      });
+    } else {
+      source.updateImage({
+        url: heatOverlayUrl,
+        coordinates
+      });
+    }
 
-        const rasterCoordinates = toImageCoordinates(payload.bbox);
-        const pngUrl = payload.png_path.startsWith('/') ? payload.png_path : `/${payload.png_path}`;
-
-        const existingSource = map.getSource(HEAT_SOURCE_ID) as maplibregl.ImageSource | undefined;
-        if (existingSource) {
-          existingSource.updateImage({
-            url: pngUrl,
-            coordinates: rasterCoordinates
-          });
-        } else {
-          map.addSource(HEAT_SOURCE_ID, {
-            type: 'image',
-            url: pngUrl,
-            coordinates: rasterCoordinates
-          });
-
-          map.addLayer({
-            id: HEAT_LAYER_ID,
-            type: 'raster',
-            source: HEAT_SOURCE_ID,
-            paint: {
-              'raster-opacity': 0.72
-            }
-          });
+    if (!map.getLayer(HEAT_LAYER_ID)) {
+      map.addLayer({
+        id: HEAT_LAYER_ID,
+        type: 'raster',
+        source: HEAT_SOURCE_ID,
+        paint: {
+          'raster-opacity': 0.72
         }
+      });
+    }
 
-        if (map.getLayer(HEAT_LAYER_ID)) {
-          map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
-        }
-
-        setStatusText(`Heat layer loaded: ${payload.date} ${payload.hour}:00`);
-      } catch (_error) {
-        setStatusText('Failed to load mock heat layer.');
-      }
-    };
-
-    void fetchHeatLayer();
-  }, [heatRequestNonce, showHeatLayer]);
+    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+    setStatusText('Heat series overlay updated.');
+  }, [heatOverlayUrl, heatOverlayBounds, showHeatLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -333,22 +293,36 @@ function MapView({
     <div className="map-wrapper">
       <div className="map-canvas-wrap">
         <div ref={mapContainerRef} className="map-canvas" />
-        <div className="coord-overlay" aria-live="polite">
-          <p>
-            <strong>Start:</strong> {formatLngLat(selectedStart)}
-          </p>
-          <p>
-            <strong>End:</strong> {formatLngLat(selectedEnd)}
-          </p>
-        </div>
-        <div className="heat-legend" aria-label="heat legend">
-          <div className="heat-legend__title">Heat exposure (mock)</div>
-          <div className="heat-legend__bar" />
-          <div className="heat-legend__labels">
-            <span>0</span>
-            <span>1</span>
-          </div>
-        </div>
+
+        <aside className="heat-colorbar" aria-label="UTCI discrete colorbar">
+          <h3>UTCI (°C)</h3>
+          <ul>
+            <li>
+              <span className="swatch swatch-1" />0-10
+            </li>
+            <li>
+              <span className="swatch swatch-2" />10-20
+            </li>
+            <li>
+              <span className="swatch swatch-3" />20-25
+            </li>
+            <li>
+              <span className="swatch swatch-4" />25-28
+            </li>
+            <li>
+              <span className="swatch swatch-5" />28-31
+            </li>
+            <li>
+              <span className="swatch swatch-6" />31-34
+            </li>
+            <li>
+              <span className="swatch swatch-7" />34-37
+            </li>
+            <li>
+              <span className="swatch swatch-8" />37-40
+            </li>
+          </ul>
+        </aside>
       </div>
       <p className="map-status">{statusText}</p>
     </div>
