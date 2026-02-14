@@ -42,7 +42,7 @@ In the web UI panel:
 3. Select hour from the **Hour** dropdown to switch overlay image.
 4. Use **Show/Hide heat layer** to toggle visibility.
 5. Map shows a fixed left-top discrete UTCI colorbar.
-6. Basemap tiles are from OpenStreetMap raster tiles (attribution: © OpenStreetMap contributors).
+6. Basemap uses OpenStreetMap raster tiles with attribution: © OpenStreetMap contributors.
 
 ## Dev API base URL configuration
 

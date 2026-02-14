@@ -24,18 +24,22 @@ const HEAT_LAYER_ID = 'heat-overlay-layer';
 const OSM_RASTER_STYLE = {
   version: 8,
   sources: {
-    'osm-raster-tiles': {
+    osm: {
       type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: [
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+      ],
       tileSize: 256,
-      attribution: '© OpenStreetMap contributors'
+      attribution: '&copy; OpenStreetMap contributors'
     }
   },
   layers: [
     {
-      id: 'osm-raster-layer',
+      id: 'osm-raster',
       type: 'raster',
-      source: 'osm-raster-tiles'
+      source: 'osm'
     }
   ]
 } as const;
@@ -120,6 +124,13 @@ function MapView({
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
+    map.addControl(
+      new maplibregl.AttributionControl({
+        compact: true,
+        customAttribution: '&copy; OpenStreetMap contributors'
+      }),
+      'bottom-right'
+    );
 
     map.on('load', () => {
       map.addSource('route', {
