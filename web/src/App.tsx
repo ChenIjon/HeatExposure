@@ -24,6 +24,8 @@ function App() {
   const [startCoord, setStartCoord] = useState(startInput);
   const [endCoord, setEndCoord] = useState(endInput);
   const [planNonce, setPlanNonce] = useState(0);
+  const [heatRequestNonce, setHeatRequestNonce] = useState(0);
+  const [showHeatLayer, setShowHeatLayer] = useState(false);
 
   const metricCards = useMemo(
     () => [
@@ -44,7 +46,7 @@ function App() {
 
   const handleMapSelectionChange = (selection: {
     start?: [number, number];
-    end?: [number, number];
+    end?: [number, number] | null;
   }) => {
     if (selection.start) {
       const nextStart = formatLngLat(selection.start);
@@ -52,11 +54,21 @@ function App() {
       setStartCoord(nextStart);
     }
 
+    if (selection.end === null) {
+      setEndInput('');
+      setEndCoord('');
+    }
+
     if (selection.end) {
       const nextEnd = formatLngLat(selection.end);
       setEndInput(nextEnd);
       setEndCoord(nextEnd);
     }
+  };
+
+  const handleLoadHeatLayer = () => {
+    setShowHeatLayer(true);
+    setHeatRequestNonce((previous) => previous + 1);
   };
 
   return (
@@ -89,6 +101,15 @@ function App() {
             <button type="submit">Plan route</button>
           </form>
 
+          <div className="layer-actions">
+            <button type="button" onClick={handleLoadHeatLayer}>
+              Load heat layer
+            </button>
+            <button type="button" onClick={() => setShowHeatLayer((value) => !value)}>
+              {showHeatLayer ? 'Hide heat layer' : 'Show heat layer'}
+            </button>
+          </div>
+
           <div className="metrics-grid">
             {metricCards.map((metric) => (
               <article key={metric.label} className="metric-card">
@@ -104,6 +125,8 @@ function App() {
             start={startCoord}
             end={endCoord}
             planNonce={planNonce}
+            heatRequestNonce={heatRequestNonce}
+            showHeatLayer={showHeatLayer}
             onSelectionChange={handleMapSelectionChange}
           />
         </section>

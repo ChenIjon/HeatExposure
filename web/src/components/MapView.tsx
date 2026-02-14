@@ -2,14 +2,32 @@ import { MutableRefObject, useEffect, useRef, useState } from 'react';
 import maplibregl, { GeoJSONSource, LngLatLike, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
+type SelectionPayload = {
+  start?: [number, number];
+  end?: [number, number] | null;
+};
+
+type HeatResponse = {
+  date: string;
+  hour: number;
+  bbox: [number, number, number, number];
+  tif_path: string;
+  png_path: string;
+  bounds: [[number, number], [number, number]];
+};
+
 type MapViewProps = {
   start: string;
   end: string;
   planNonce: number;
-  onSelectionChange?: (selection: { start?: [number, number]; end?: [number, number] }) => void;
+  heatRequestNonce: number;
+  showHeatLayer: boolean;
+  onSelectionChange?: (selection: SelectionPayload) => void;
 };
 
 const DEFAULT_CENTER: LngLatLike = [121.4737, 31.2304];
+const HEAT_SOURCE_ID = 'heat-overlay';
+const HEAT_LAYER_ID = 'heat-overlay-layer';
 
 const parseLngLat = (rawValue: string): [number, number] | null => {
   const [lngText, latText] = rawValue.split(',').map((value) => value.trim());
@@ -26,7 +44,50 @@ const parseLngLat = (rawValue: string): [number, number] | null => {
 const formatLngLat = (coords: [number, number] | null) =>
   coords ? `${coords[0].toFixed(6)}, ${coords[1].toFixed(6)}` : '--';
 
-function MapView({ start, end, planNonce, onSelectionChange }: MapViewProps) {
+const getBboxFromMap = (map: maplibregl.Map): [number, number, number, number] => {
+  const bounds = map.getBounds();
+  return [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()];
+};
+
+const requestHeatMap = async (params: {
+  date: string;
+  hour: number;
+  bbox: [number, number, number, number];
+}): Promise<HeatResponse> => {
+  const { date, hour, bbox } = params;
+  const query = new URLSearchParams({
+    date,
+    hour: String(hour),
+    bbox: bbox.map((value) => value.toFixed(6)).join(',')
+  });
+
+  // TODO: replace this with real heat exposure calculation API; keep response schema.
+  const response = await fetch(`/api/heat/mock?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to request heat layer.');
+  }
+
+  return (await response.json()) as HeatResponse;
+};
+
+const toImageCoordinates = (bbox: [number, number, number, number]) => {
+  const [minLng, minLat, maxLng, maxLat] = bbox;
+  return [
+    [minLng, maxLat],
+    [maxLng, maxLat],
+    [maxLng, minLat],
+    [minLng, minLat]
+  ] as [[number, number], [number, number], [number, number], [number, number]];
+};
+
+function MapView({
+  start,
+  end,
+  planNonce,
+  heatRequestNonce,
+  showHeatLayer,
+  onSelectionChange
+}: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const startMarkerRef = useRef<Marker | null>(null);
@@ -106,7 +167,7 @@ function MapView({ start, end, planNonce, onSelectionChange }: MapViewProps) {
       if (!startSelectionRef.current || endSelectionRef.current) {
         setSelectedStart(nextPoint);
         setSelectedEnd(null);
-        onSelectionChange?.({ start: nextPoint });
+        onSelectionChange?.({ start: nextPoint, end: null });
         setStatusText('Start point selected. Click again to set End point.');
         return;
       }
@@ -199,6 +260,75 @@ function MapView({ start, end, planNonce, onSelectionChange }: MapViewProps) {
     void fetchRoute();
   }, [start, end, planNonce]);
 
+  useEffect(() => {
+    if (heatRequestNonce === 0) {
+      return;
+    }
+
+    const map = mapRef.current;
+    if (!map) {
+      return;
+    }
+
+    const fetchHeatLayer = async () => {
+      const bbox = getBboxFromMap(map);
+      setStatusText('Loading mock heat layer...');
+
+      try {
+        const payload = await requestHeatMap({
+          date: '2026-02-14',
+          hour: 13,
+          bbox
+        });
+
+        const rasterCoordinates = toImageCoordinates(payload.bbox);
+        const pngUrl = payload.png_path.startsWith('/') ? payload.png_path : `/${payload.png_path}`;
+
+        const existingSource = map.getSource(HEAT_SOURCE_ID) as maplibregl.ImageSource | undefined;
+        if (existingSource) {
+          existingSource.updateImage({
+            url: pngUrl,
+            coordinates: rasterCoordinates
+          });
+        } else {
+          map.addSource(HEAT_SOURCE_ID, {
+            type: 'image',
+            url: pngUrl,
+            coordinates: rasterCoordinates
+          });
+
+          map.addLayer({
+            id: HEAT_LAYER_ID,
+            type: 'raster',
+            source: HEAT_SOURCE_ID,
+            paint: {
+              'raster-opacity': 0.72
+            }
+          });
+        }
+
+        if (map.getLayer(HEAT_LAYER_ID)) {
+          map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+        }
+
+        setStatusText(`Heat layer loaded: ${payload.date} ${payload.hour}:00`);
+      } catch (_error) {
+        setStatusText('Failed to load mock heat layer.');
+      }
+    };
+
+    void fetchHeatLayer();
+  }, [heatRequestNonce, showHeatLayer]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(HEAT_LAYER_ID)) {
+      return;
+    }
+
+    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+  }, [showHeatLayer]);
+
   return (
     <div className="map-wrapper">
       <div className="map-canvas-wrap">
@@ -210,6 +340,14 @@ function MapView({ start, end, planNonce, onSelectionChange }: MapViewProps) {
           <p>
             <strong>End:</strong> {formatLngLat(selectedEnd)}
           </p>
+        </div>
+        <div className="heat-legend" aria-label="heat legend">
+          <div className="heat-legend__title">Heat exposure (mock)</div>
+          <div className="heat-legend__bar" />
+          <div className="heat-legend__labels">
+            <span>0</span>
+            <span>1</span>
+          </div>
         </div>
       </div>
       <p className="map-status">{statusText}</p>
