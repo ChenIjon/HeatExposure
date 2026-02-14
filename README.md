@@ -23,7 +23,7 @@ This repository includes mock backend endpoints for repeatable heat-exposure ras
   - `end=lng,lat`
   - preferred: `start_hour=13&n_hours=6`
   - optional alternative: `hours=13,14,15`
-  - optional: `profile=walking|driving`
+  - optional: `profile=walking|driving|running`
 - **Returns:** `hours`, route-based `bounds`, and `items` with `png_url` / `tif_url` per hour.
 
 Artifacts are generated under `server/results/YYYYMMDD/HH/`:

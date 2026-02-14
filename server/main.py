@@ -204,7 +204,7 @@ def _fetch_route_geometry(
     end: Tuple[float, float],
     profile: str,
 ) -> Optional[List[List[float]]]:
-    allowed_profiles = {'walking', 'driving'}
+    allowed_profiles = {'walking', 'driving', 'running'}
     safe_profile = profile if profile in allowed_profiles else 'walking'
     url = (
         f'https://router.project-osrm.org/route/v1/{safe_profile}/'
@@ -318,8 +318,9 @@ def build_mock_heat_layer(
     tif_file = output_dir / 'heat_exposure.tif'
     png_file = output_dir / 'heat_exposure.png'
 
-    _write_geotiff(heat_utci, tif_file, parsed_bbox)
-    _write_overlay_png_discrete(heat_utci, png_file)
+    if not (tif_file.exists() and png_file.exists()):
+        _write_geotiff(heat_utci, tif_file, parsed_bbox)
+        _write_overlay_png_discrete(heat_utci, png_file)
 
     min_lng, min_lat, max_lng, max_lat = parsed_bbox
     return HeatMockResponse(
@@ -369,11 +370,12 @@ def build_mock_heat_series(
         tif_file = output_dir / 'heat_exposure.tif'
         png_file = output_dir / 'heat_exposure.png'
 
-        seed = _stable_seed(f'{date}-{hour}-{start}-{end}')
-        heat = _generate_route_weighted_heat(seed=seed, bbox=route_bbox, route_coords=route_coords)
+        if not (tif_file.exists() and png_file.exists()):
+            seed = _stable_seed(f'{date}-{hour}-{start}-{end}')
+            heat = _generate_route_weighted_heat(seed=seed, bbox=route_bbox, route_coords=route_coords)
 
-        _write_geotiff(heat, tif_file, route_bbox)
-        _write_overlay_png_discrete(heat, png_file)
+            _write_geotiff(heat, tif_file, route_bbox)
+            _write_overlay_png_discrete(heat, png_file)
 
         items.append(
             HeatSeriesItem(

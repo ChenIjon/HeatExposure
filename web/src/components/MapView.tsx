@@ -214,7 +214,7 @@ function MapView({
     const fetchRoute = async () => {
       setStatusText('Planning route...');
 
-      const url = `https://router.project-osrm.org/route/v1/driving/${parsedStart[0]},${parsedStart[1]};${parsedEnd[0]},${parsedEnd[1]}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/walking/${parsedStart[0]},${parsedStart[1]};${parsedEnd[0]},${parsedEnd[1]}?overview=full&geometries=geojson`;
 
       try {
         const response = await fetch(url);

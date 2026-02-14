@@ -60,7 +60,7 @@ async function requestHeatSeries(params: {
   end: string;
   startHour: number;
   nHours: number;
-  profile: 'walking' | 'driving';
+  profile: 'walking' | 'driving' | 'running';
 }): Promise<HeatSeriesResponse> {
   const query = new URLSearchParams({
     date: params.date,
