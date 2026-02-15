@@ -146,13 +146,13 @@ function MapView({
         type: 'line',
         source: 'route',
         paint: {
-          'line-color': '#f97316',
+          'line-color': '#ffa76e',
           'line-width': 5
         }
       });
 
-      updateMarker(startMarkerRef, map, startSelectionRef.current, '#16a34a');
-      updateMarker(endMarkerRef, map, endSelectionRef.current, '#dc2626');
+      updateMarker(startMarkerRef, map, startSelectionRef.current, '#6eb4d8');
+      updateMarker(endMarkerRef, map, endSelectionRef.current, '#e38f5b');
     });
 
     map.on('click', (event) => {
@@ -196,8 +196,8 @@ function MapView({
       return;
     }
 
-    updateMarker(startMarkerRef, map, selectedStart, '#16a34a');
-    updateMarker(endMarkerRef, map, selectedEnd, '#dc2626');
+    updateMarker(startMarkerRef, map, selectedStart, '#6eb4d8');
+    updateMarker(endMarkerRef, map, selectedEnd, '#e38f5b');
 
     if (!selectedStart || !selectedEnd) {
       const source = map.getSource('route') as GeoJSONSource | undefined;

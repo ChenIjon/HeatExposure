@@ -101,6 +101,18 @@ function App() {
     []
   );
 
+  const themeSwatches = useMemo(
+    () => [
+      { name: 'Primary Orange', hex: '#FFA76E', usage: 'Primary actions, highlighted route, focus accents' },
+      { name: 'Soft Sky Blue', hex: '#AEDFF7', usage: 'Data overlays, cool-state controls, charts' },
+      { name: 'Warm White', hex: '#FFF9F2', usage: 'Main panel backgrounds and cards' },
+      { name: 'Mist Gray', hex: '#EEF2F4', usage: 'Page background and section separation' },
+      { name: 'Silver Gray', hex: '#C5CED6', usage: 'Borders, dividers, subtle line work' },
+      { name: 'Ink Slate', hex: '#2F3A45', usage: 'Body text, labels, high-contrast UI copy' }
+    ],
+    []
+  );
+
   const selectedHeatItem = useMemo(() => {
     if (!heatSeries || selectedHour === null) {
       return null;
@@ -239,6 +251,33 @@ function App() {
               </article>
             ))}
           </div>
+
+          <section className="theme-guide" aria-label="theme guide">
+            <h3>Natural Minimalist Theme</h3>
+            <p>
+              Fresh orange + airy blue palette with soft neutrals, designed for calm environmental
+              analytics without aggressive red heat cues.
+            </p>
+
+            <div className="theme-swatch-grid">
+              {themeSwatches.map((swatch) => (
+                <article key={swatch.hex} className="theme-swatch-card">
+                  <span className="theme-chip" style={{ background: swatch.hex }} aria-hidden="true" />
+                  <div>
+                    <strong>{swatch.name}</strong>
+                    <p>{swatch.hex}</p>
+                    <small>{swatch.usage}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <ul className="theme-notes">
+              <li>Buttons use warm orange for primary actions; secondary controls use soft blue outlines.</li>
+              <li>Heat legend transitions from cool blue to gentle orange for intuitive thermal gradation.</li>
+              <li>All text and key boundaries maintain contrast against warm-white and gray surfaces.</li>
+            </ul>
+          </section>
         </section>
 
         <section className="map-section" aria-label="map area">
