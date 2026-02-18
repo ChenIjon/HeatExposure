@@ -80,8 +80,8 @@ async function requestHeatSeries(params: {
 }
 
 function App() {
-  const [startInput, setStartInput] = useState('121.4737,31.2304');
-  const [endInput, setEndInput] = useState('121.4998,31.2397');
+  const [startInput, setStartInput] = useState('114.1550,22.2760');
+  const [endInput, setEndInput] = useState('114.1880,22.2480');
   const [startCoord, setStartCoord] = useState(startInput);
   const [endCoord, setEndCoord] = useState(endInput);
   const [planNonce, setPlanNonce] = useState(0);
@@ -252,32 +252,6 @@ function App() {
             ))}
           </div>
 
-          <section className="theme-guide" aria-label="theme guide">
-            <h3>Natural Minimalist Theme</h3>
-            <p>
-              Fresh orange + airy blue palette with soft neutrals, designed for calm environmental
-              analytics without aggressive red heat cues.
-            </p>
-
-            <div className="theme-swatch-grid">
-              {themeSwatches.map((swatch) => (
-                <article key={swatch.hex} className="theme-swatch-card">
-                  <span className="theme-chip" style={{ background: swatch.hex }} aria-hidden="true" />
-                  <div>
-                    <strong>{swatch.name}</strong>
-                    <p>{swatch.hex}</p>
-                    <small>{swatch.usage}</small>
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            <ul className="theme-notes">
-              <li>Buttons use warm orange for primary actions; secondary controls use soft blue outlines.</li>
-              <li>Heat legend transitions from cool blue to gentle orange for intuitive thermal gradation.</li>
-              <li>All text and key boundaries maintain contrast against warm-white and gray surfaces.</li>
-            </ul>
-          </section>
         </section>
 
         <section className="map-section" aria-label="map area">

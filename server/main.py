@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -20,6 +21,8 @@ from pydantic import BaseModel
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT_DIR / 'server' / 'results'
+DEFAULT_TILE_INDEX_PATH = ROOT_DIR / 'server' / 'data' / 'hk_tiles_index.json'
+TILE_INDEX_PATH = Path(os.getenv('HEAT_TILE_INDEX_PATH', str(DEFAULT_TILE_INDEX_PATH))).expanduser()
 
 app = FastAPI(title='HeatExposure Mock API')
 
@@ -64,6 +67,11 @@ class HeatSeriesResponse(BaseModel):
     hours: List[int]
     bounds: Tuple[Tuple[float, float], Tuple[float, float]]
     items: List[HeatSeriesItem]
+    route_tiles: List[Tuple[int, int]]
+
+
+class TileMatchResponse(BaseModel):
+    route_tiles: List[Tuple[int, int]]
 
 
 def _parse_bbox(raw_bbox: str) -> Tuple[float, float, float, float]:
@@ -91,6 +99,167 @@ def _parse_lng_lat(raw_coord: str, name: str) -> Tuple[float, float]:
         raise HTTPException(status_code=400, detail=f'{name} must follow lng,lat format.') from exc
 
     return lng, lat
+
+
+def _to_int(value: object) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith('-'):
+            body = stripped[1:]
+            return int(stripped) if body.isdigit() else None
+        return int(stripped) if stripped.isdigit() else None
+    return None
+
+
+def _to_float(value: object) -> Optional[float]:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_tile_bounds(tile: Dict[str, object]) -> Optional[Tuple[float, float, float, float]]:
+    bounds = tile.get('bounds')
+    bbox = tile.get('bbox')
+
+    if isinstance(bounds, list) and len(bounds) == 4:
+        parsed = [_to_float(item) for item in bounds]
+        if all(item is not None for item in parsed):
+            min_lng, min_lat, max_lng, max_lat = parsed  # type: ignore[assignment]
+            return min_lng, min_lat, max_lng, max_lat
+
+    if isinstance(bbox, list) and len(bbox) == 4:
+        parsed = [_to_float(item) for item in bbox]
+        if all(item is not None for item in parsed):
+            min_lng, min_lat, max_lng, max_lat = parsed  # type: ignore[assignment]
+            return min_lng, min_lat, max_lng, max_lat
+
+    min_lng = _to_float(tile.get('min_lng'))
+    min_lat = _to_float(tile.get('min_lat'))
+    max_lng = _to_float(tile.get('max_lng'))
+    max_lat = _to_float(tile.get('max_lat'))
+    if None not in (min_lng, min_lat, max_lng, max_lat):
+        return min_lng, min_lat, max_lng, max_lat  # type: ignore[return-value]
+
+    left = _to_float(tile.get('left'))
+    bottom = _to_float(tile.get('bottom'))
+    right = _to_float(tile.get('right'))
+    top = _to_float(tile.get('top'))
+    if None not in (left, bottom, right, top):
+        return left, bottom, right, top  # type: ignore[return-value]
+
+    return None
+
+
+def _load_tile_index(path: Path = TILE_INDEX_PATH) -> List[Dict[str, object]]:
+    if not path.exists():
+        return []
+
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    raw_tiles: List[object]
+    if isinstance(payload, dict) and isinstance(payload.get('tiles'), list):
+        raw_tiles = payload['tiles']
+    elif isinstance(payload, list):
+        raw_tiles = payload
+    else:
+        return []
+
+    parsed_tiles: List[Dict[str, object]] = []
+    for tile in raw_tiles:
+        if not isinstance(tile, dict):
+            continue
+
+        row = _to_int(tile.get('row'))
+        if row is None:
+            row = _to_int(tile.get('tile_row'))
+        if row is None:
+            row = _to_int(tile.get('r'))
+
+        col = _to_int(tile.get('col'))
+        if col is None:
+            col = _to_int(tile.get('tile_col'))
+        if col is None:
+            col = _to_int(tile.get('c'))
+
+        bounds = _extract_tile_bounds(tile)
+        if row is None or col is None or bounds is None:
+            continue
+
+        min_lng, min_lat, max_lng, max_lat = bounds
+        if min_lng >= max_lng or min_lat >= max_lat:
+            continue
+
+        parsed_tiles.append(
+            {
+                'row': row,
+                'col': col,
+                'min_lng': min_lng,
+                'min_lat': min_lat,
+                'max_lng': max_lng,
+                'max_lat': max_lat,
+            }
+        )
+
+    return parsed_tiles
+
+
+def _densify_route(route_coords: List[List[float]], max_step_deg: float = 0.0003) -> List[Tuple[float, float]]:
+    if len(route_coords) < 2:
+        return [(coord[0], coord[1]) for coord in route_coords]
+
+    points: List[Tuple[float, float]] = []
+    for index in range(len(route_coords) - 1):
+        start_lng, start_lat = route_coords[index]
+        end_lng, end_lat = route_coords[index + 1]
+        delta_lng = end_lng - start_lng
+        delta_lat = end_lat - start_lat
+        max_delta = max(abs(delta_lng), abs(delta_lat))
+        steps = max(1, int(max_delta / max_step_deg))
+
+        for step in range(steps):
+            ratio = step / steps
+            points.append((start_lng + delta_lng * ratio, start_lat + delta_lat * ratio))
+
+    last_lng, last_lat = route_coords[-1]
+    points.append((last_lng, last_lat))
+    return points
+
+
+def _match_route_tiles(route_coords: List[List[float]], tile_index: List[Dict[str, object]]) -> List[Tuple[int, int]]:
+    if not tile_index or len(route_coords) < 2:
+        return []
+
+    sampled_points = _densify_route(route_coords)
+    matched: Set[Tuple[int, int]] = set()
+
+    for lng, lat in sampled_points:
+        for tile in tile_index:
+            min_lng = float(tile['min_lng'])
+            min_lat = float(tile['min_lat'])
+            max_lng = float(tile['max_lng'])
+            max_lat = float(tile['max_lat'])
+
+            if min_lng <= lng <= max_lng and min_lat <= lat <= max_lat:
+                matched.add((int(tile['row']), int(tile['col'])))
+
+    return sorted(matched)
 
 
 def _stable_seed(token: str) -> int:
@@ -356,6 +525,9 @@ def build_mock_heat_series(
     if route_coords is None:
         route_coords = [[start_point[0], start_point[1]], [end_point[0], end_point[1]]]
 
+    tile_index = _load_tile_index()
+    route_tiles = _match_route_tiles(route_coords=route_coords, tile_index=tile_index)
+
     route_bbox = _expand_bbox(_bbox_from_route(route_coords), ratio=0.05)
     min_lng, min_lat, max_lng, max_lat = route_bbox
 
@@ -390,4 +562,23 @@ def build_mock_heat_series(
         hours=parsed_hours,
         bounds=((min_lng, min_lat), (max_lng, max_lat)),
         items=items,
+        route_tiles=route_tiles,
     )
+
+
+@app.get('/api/tiles/route', response_model=TileMatchResponse)
+def get_route_tile_matches(
+    start: str = Query(..., description='lng,lat'),
+    end: str = Query(..., description='lng,lat'),
+    profile: str = Query(default='walking'),
+) -> TileMatchResponse:
+    start_point = _parse_lng_lat(start, 'start')
+    end_point = _parse_lng_lat(end, 'end')
+
+    route_coords = _fetch_route_geometry(start_point, end_point, profile=profile)
+    if route_coords is None:
+        route_coords = [[start_point[0], start_point[1]], [end_point[0], end_point[1]]]
+
+    tile_index = _load_tile_index()
+    route_tiles = _match_route_tiles(route_coords=route_coords, tile_index=tile_index)
+    return TileMatchResponse(route_tiles=route_tiles)

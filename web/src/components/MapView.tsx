@@ -17,7 +17,7 @@ type MapViewProps = {
   onSelectionChange?: (selection: SelectionPayload) => void;
 };
 
-const DEFAULT_CENTER: LngLatLike = [121.4737, 31.2304];
+const DEFAULT_CENTER: LngLatLike = [114.1636, 22.2755];
 const HEAT_SOURCE_ID = 'heat-overlay';
 const HEAT_LAYER_ID = 'heat-overlay-layer';
 
