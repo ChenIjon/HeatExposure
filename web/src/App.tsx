@@ -108,6 +108,18 @@ function App() {
     []
   );
 
+  const themeSwatches = useMemo(
+    () => [
+      { name: 'Primary Orange', hex: '#FFA76E', usage: 'Primary actions, highlighted route, focus accents' },
+      { name: 'Soft Sky Blue', hex: '#AEDFF7', usage: 'Data overlays, cool-state controls, charts' },
+      { name: 'Warm White', hex: '#FFF9F2', usage: 'Main panel backgrounds and cards' },
+      { name: 'Mist Gray', hex: '#EEF2F4', usage: 'Page background and section separation' },
+      { name: 'Silver Gray', hex: '#C5CED6', usage: 'Borders, dividers, subtle line work' },
+      { name: 'Ink Slate', hex: '#2F3A45', usage: 'Body text, labels, high-contrast UI copy' }
+    ],
+    []
+  );
+
   const selectedHeatItem = useMemo(() => {
     if (!heatSeries || selectedHour === null) {
       return null;

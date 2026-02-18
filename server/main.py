@@ -708,3 +708,21 @@ def get_tile_index_meta() -> TileIndexMetaResponse:
         file_exists=TILE_INDEX_PATH.exists(),
         tile_count=len(tile_index),
     )
+
+
+@app.get('/api/tiles/route', response_model=TileMatchResponse)
+def get_route_tile_matches(
+    start: str = Query(..., description='lng,lat'),
+    end: str = Query(..., description='lng,lat'),
+    profile: str = Query(default='walking'),
+) -> TileMatchResponse:
+    start_point = _parse_lng_lat(start, 'start')
+    end_point = _parse_lng_lat(end, 'end')
+
+    route_coords = _fetch_route_geometry(start_point, end_point, profile=profile)
+    if route_coords is None:
+        route_coords = [[start_point[0], start_point[1]], [end_point[0], end_point[1]]]
+
+    tile_index = _load_tile_index()
+    route_tiles = _match_route_tiles(route_coords=route_coords, tile_index=tile_index)
+    return TileMatchResponse(route_tiles=route_tiles)
