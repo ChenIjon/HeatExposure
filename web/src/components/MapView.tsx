@@ -7,19 +7,25 @@ type SelectionPayload = {
   end?: [number, number] | null;
 };
 
+type HeatOverlayTile = {
+  row: number;
+  col: number;
+  url: string;
+  bounds: [[number, number], [number, number]];
+};
+
 type MapViewProps = {
   start: string;
   end: string;
   planNonce: number;
   showHeatLayer: boolean;
-  heatOverlayUrl: string | null;
-  heatOverlayBounds: [[number, number], [number, number]] | null;
+  heatOverlays: HeatOverlayTile[];
   onSelectionChange?: (selection: SelectionPayload) => void;
 };
 
-const DEFAULT_CENTER: LngLatLike = [121.4737, 31.2304];
-const HEAT_SOURCE_ID = 'heat-overlay';
-const HEAT_LAYER_ID = 'heat-overlay-layer';
+const DEFAULT_CENTER: LngLatLike = [114.1636, 22.2755];
+const HEAT_LAYER_PREFIX = 'heat-overlay-layer';
+const HEAT_SOURCE_PREFIX = 'heat-overlay-source';
 
 const OSM_RASTER_STYLE = {
   version: 8,
@@ -71,8 +77,7 @@ function MapView({
   end,
   planNonce,
   showHeatLayer,
-  heatOverlayUrl,
-  heatOverlayBounds,
+  heatOverlays,
   onSelectionChange
 }: MapViewProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +86,7 @@ function MapView({
   const endMarkerRef = useRef<Marker | null>(null);
   const startSelectionRef = useRef<[number, number] | null>(null);
   const endSelectionRef = useRef<[number, number] | null>(null);
+  const activeHeatLayerIdsRef = useRef<string[]>([]);
 
   const [selectedStart, setSelectedStart] = useState<[number, number] | null>(parseLngLat(start));
   const [selectedEnd, setSelectedEnd] = useState<[number, number] | null>(parseLngLat(end));
@@ -146,13 +152,13 @@ function MapView({
         type: 'line',
         source: 'route',
         paint: {
-          'line-color': '#f97316',
+          'line-color': '#ffa76e',
           'line-width': 5
         }
       });
 
-      updateMarker(startMarkerRef, map, startSelectionRef.current, '#16a34a');
-      updateMarker(endMarkerRef, map, endSelectionRef.current, '#dc2626');
+      updateMarker(startMarkerRef, map, startSelectionRef.current, '#6eb4d8');
+      updateMarker(endMarkerRef, map, endSelectionRef.current, '#e38f5b');
     });
 
     map.on('click', (event) => {
@@ -180,6 +186,7 @@ function MapView({
       mapRef.current = null;
       startMarkerRef.current = null;
       endMarkerRef.current = null;
+      activeHeatLayerIdsRef.current = [];
     };
   }, [onSelectionChange]);
 
@@ -196,8 +203,8 @@ function MapView({
       return;
     }
 
-    updateMarker(startMarkerRef, map, selectedStart, '#16a34a');
-    updateMarker(endMarkerRef, map, selectedEnd, '#dc2626');
+    updateMarker(startMarkerRef, map, selectedStart, '#6eb4d8');
+    updateMarker(endMarkerRef, map, selectedEnd, '#e38f5b');
 
     if (!selectedStart || !selectedEnd) {
       const source = map.getSource('route') as GeoJSONSource | undefined;
@@ -218,7 +225,7 @@ function MapView({
     const parsedEnd = parseLngLat(end);
 
     if (!map || !parsedStart || !parsedEnd) {
-      setStatusText('Invalid coordinate format. Use lng,lat (example: 121.4737,31.2304).');
+      setStatusText('Invalid coordinate format. Use lng,lat (example: 114.1636,22.2755).');
       return;
     }
 
@@ -256,48 +263,65 @@ function MapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !heatOverlayUrl || !heatOverlayBounds) {
+    if (!map) {
       return;
     }
 
-    const coordinates = toImageCoordinates(heatOverlayBounds);
-    const source = map.getSource(HEAT_SOURCE_ID) as maplibregl.ImageSource | undefined;
+    for (const layerId of activeHeatLayerIdsRef.current) {
+      const sourceId = layerId.replace(HEAT_LAYER_PREFIX, HEAT_SOURCE_PREFIX);
+      if (map.getLayer(layerId)) {
+        map.removeLayer(layerId);
+      }
+      if (map.getSource(sourceId)) {
+        map.removeSource(sourceId);
+      }
+    }
+    activeHeatLayerIdsRef.current = [];
 
-    if (!source) {
-      map.addSource(HEAT_SOURCE_ID, {
-        type: 'image',
-        url: heatOverlayUrl,
-        coordinates
-      });
-    } else {
-      source.updateImage({
-        url: heatOverlayUrl,
-        coordinates
-      });
+    if (!heatOverlays.length) {
+      return;
     }
 
-    if (!map.getLayer(HEAT_LAYER_ID)) {
+    const nextLayerIds: string[] = [];
+    for (const tile of heatOverlays) {
+      const key = `r${tile.row}_c${tile.col}`;
+      const sourceId = `${HEAT_SOURCE_PREFIX}-${key}`;
+      const layerId = `${HEAT_LAYER_PREFIX}-${key}`;
+
+      map.addSource(sourceId, {
+        type: 'image',
+        url: tile.url,
+        coordinates: toImageCoordinates(tile.bounds)
+      });
+
       map.addLayer({
-        id: HEAT_LAYER_ID,
+        id: layerId,
         type: 'raster',
-        source: HEAT_SOURCE_ID,
+        source: sourceId,
         paint: {
           'raster-opacity': 0.72
         }
       });
+
+      map.setLayoutProperty(layerId, 'visibility', showHeatLayer ? 'visible' : 'none');
+      nextLayerIds.push(layerId);
     }
 
-    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
-    setStatusText('Heat series overlay updated.');
-  }, [heatOverlayUrl, heatOverlayBounds, showHeatLayer]);
+    activeHeatLayerIdsRef.current = nextLayerIds;
+    setStatusText(`Heat overlays updated (${heatOverlays.length} tiles).`);
+  }, [heatOverlays, showHeatLayer]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.getLayer(HEAT_LAYER_ID)) {
+    if (!map) {
       return;
     }
 
-    map.setLayoutProperty(HEAT_LAYER_ID, 'visibility', showHeatLayer ? 'visible' : 'none');
+    for (const layerId of activeHeatLayerIdsRef.current) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, 'visibility', showHeatLayer ? 'visible' : 'none');
+      }
+    }
   }, [showHeatLayer]);
 
   return (
