@@ -1,7 +1,7 @@
 :root {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #1f2937;
-  background: #f3f4f6;
+  color: #2f3a45;
+  background: #eef2f4;
 }
 
 * {
@@ -10,6 +10,7 @@
 
 body {
   margin: 0;
+  background: radial-gradient(circle at 10% 20%, #fdf4e8 0, #f6fbff 40%, #eef2f4 100%);
 }
 
 .app-shell {
@@ -19,9 +20,10 @@ body {
 }
 
 .app-header {
-  padding: 1rem 1.5rem;
-  color: #f9fafb;
-  background: linear-gradient(120deg, #2563eb, #0f766e);
+  padding: 1.5rem 1.8rem;
+  color: #2b3844;
+  background: linear-gradient(125deg, #fffaf4 0%, #ffe8d7 45%, #deeffb 100%);
+  border-bottom: 1px solid #dde5eb;
 }
 
 .app-header h1 {
@@ -31,22 +33,29 @@ body {
 
 .app-header p {
   margin: 0.35rem 0 0;
-  opacity: 0.9;
+  opacity: 0.84;
 }
 
 .app-main {
   flex: 1;
   display: grid;
   grid-template-columns: minmax(280px, 360px) 1fr;
-  gap: 1rem;
-  padding: 1rem;
+  gap: 1.2rem;
+  padding: 1.2rem;
 }
 
 .panel {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 1rem;
-  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08);
+  background: #fff9f2;
+  border-radius: 16px;
+  padding: 1.15rem;
+  border: 1px solid #e4e7eb;
+  box-shadow: 0 12px 30px rgba(113, 132, 151, 0.14);
+}
+
+.panel h2,
+.panel h3 {
+  color: #2b3844;
+  letter-spacing: 0.01em;
 }
 
 .route-form {
@@ -60,17 +69,26 @@ body {
 .hour-select {
   width: 100%;
   border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #c5ced6;
   padding: 0.65rem 0.75rem;
   font: inherit;
+  background: #ffffff;
 }
 
 .route-form button {
   margin-top: 0.5rem;
   border: none;
-  color: #ffffff;
-  background: #2563eb;
+  color: #2a3641;
+  background: #ffa76e;
   cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.route-form button:hover {
+  transform: translateY(-1px);
+  background: #ffba8c;
+  box-shadow: 0 8px 20px rgba(255, 167, 110, 0.3);
 }
 
 .layer-actions {
@@ -82,19 +100,23 @@ body {
 .layer-actions button {
   width: 100%;
   border-radius: 8px;
-  border: 1px solid #94a3b8;
+  border: 1px solid #97b7c9;
   padding: 0.55rem 0.75rem;
   font: inherit;
-  background: #f8fafc;
-  color: #0f172a;
+  background: #f3f8fc;
+  color: #344453;
   cursor: pointer;
+}
+
+.layer-actions button:hover {
+  background: #e7f3fb;
 }
 
 .hour-select-label {
   display: block;
   margin: 0 0 0.35rem;
   font-size: 0.9rem;
-  color: #334155;
+  color: #405061;
 }
 
 .hour-select {
@@ -106,9 +128,9 @@ body {
   margin: 0 0 1rem;
   padding: 0.55rem 0.7rem;
   border-radius: 8px;
-  border: 1px solid #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
+  border: 1px solid #f8c49d;
+  background: #fff1e7;
+  color: #914f2a;
   font-size: 0.85rem;
 }
 
@@ -122,13 +144,13 @@ body {
   display: grid;
   gap: 0.25rem;
   border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #dbe3ea;
   padding: 0.75rem;
-  background: #f8fafc;
+  background: #fcfeff;
 }
 
 .metric-card span {
-  color: #64748b;
+  color: #617284;
   font-size: 0.875rem;
 }
 
@@ -150,7 +172,8 @@ body {
 
 .map-canvas {
   height: 100%;
-  border-radius: 12px;
+  border-radius: 16px;
+  border: 1px solid #dce4ea;
   overflow: hidden;
 }
 
@@ -159,9 +182,10 @@ body {
   top: 0.75rem;
   left: 0.75rem;
   z-index: 1;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #f8fafc;
+  border-radius: 12px;
+  background: rgba(255, 249, 242, 0.92);
+  border: 1px solid rgba(187, 202, 214, 0.8);
+  color: #2f3a45;
   padding: 0.55rem 0.75rem;
   min-width: 170px;
 }
@@ -191,21 +215,21 @@ body {
   width: 16px;
   height: 10px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(47, 58, 69, 0.2);
 }
 
-.swatch-1 { background: #001e9d; }
-.swatch-2 { background: #005dff; }
-.swatch-3 { background: #00b8ff; }
-.swatch-4 { background: #4dffb3; }
-.swatch-5 { background: #acff4f; }
-.swatch-6 { background: #ffd400; }
-.swatch-7 { background: #ff7e00; }
-.swatch-8 { background: #c80000; }
+.swatch-1 { background: #dff2fc; }
+.swatch-2 { background: #c6e8fa; }
+.swatch-3 { background: #aedff7; }
+.swatch-4 { background: #91d0ef; }
+.swatch-5 { background: #ffcda8; }
+.swatch-6 { background: #ffbb8a; }
+.swatch-7 { background: #ffa76e; }
+.swatch-8 { background: #e38f5b; }
 
 .map-status {
   margin: 0;
-  color: #475569;
+  color: #4e6173;
   font-size: 0.9rem;
 }
 
@@ -216,9 +240,10 @@ body {
   bottom: 0.75rem;
   z-index: 1;
   width: 170px;
-  border-radius: 10px;
-  background: rgba(15, 23, 42, 0.82);
-  color: #f8fafc;
+  border-radius: 12px;
+  background: rgba(255, 250, 244, 0.94);
+  border: 1px solid rgba(187, 202, 214, 0.8);
+  color: #2f3a45;
   padding: 0.5rem 0.6rem;
   font-size: 0.75rem;
 }
@@ -232,15 +257,13 @@ body {
   border-radius: 999px;
   background: linear-gradient(
     90deg,
-    #00007f 0%,
-    #0000ff 12%,
-    #007fff 25%,
-    #00ffff 38%,
-    #7fff7f 50%,
-    #ffff00 62%,
-    #ff7f00 75%,
-    #ff0000 88%,
-    #7f0000 100%
+    #e8f6fe 0%,
+    #cdeafa 16%,
+    #aedff7 32%,
+    #8bcae8 48%,
+    #ffe2ca 64%,
+    #ffcba4 80%,
+    #ffa76e 100%
   );
 }
 

@@ -80,8 +80,8 @@ async function requestHeatSeries(params: {
 }
 
 function App() {
-  const [startInput, setStartInput] = useState('121.4737,31.2304');
-  const [endInput, setEndInput] = useState('121.4998,31.2397');
+  const [startInput, setStartInput] = useState('114.1550,22.2760');
+  const [endInput, setEndInput] = useState('114.1880,22.2480');
   const [startCoord, setStartCoord] = useState(startInput);
   const [endCoord, setEndCoord] = useState(endInput);
   const [planNonce, setPlanNonce] = useState(0);
@@ -239,6 +239,7 @@ function App() {
               </article>
             ))}
           </div>
+
         </section>
 
         <section className="map-section" aria-label="map area">
