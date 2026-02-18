@@ -56,21 +56,40 @@ class HeatMockResponse(BaseModel):
     bounds: Tuple[Tuple[float, float], Tuple[float, float]]
 
 
-class HeatSeriesItem(BaseModel):
-    hour: int
+class HeatTileResult(BaseModel):
+    row: int
+    col: int
     png_url: str
     tif_url: str
+    bounds: Tuple[Tuple[float, float], Tuple[float, float]]
+
+
+class HeatSeriesHourResult(BaseModel):
+    hour: int
+    tiles: List[HeatTileResult]
 
 
 class HeatSeriesResponse(BaseModel):
     date: str
     hours: List[int]
     bounds: Tuple[Tuple[float, float], Tuple[float, float]]
-    items: List[HeatSeriesItem]
+    items: List[HeatSeriesHourResult]
     route_tiles: List[Tuple[int, int]]
 
 
 class TileMatchResponse(BaseModel):
+    route_tiles: List[Tuple[int, int]]
+
+
+class TileIndexMetaResponse(BaseModel):
+    tile_index_path: str
+    file_exists: bool
+    tile_count: int
+
+
+class HeatComputeManifest(BaseModel):
+    date: str
+    hour: int
     route_tiles: List[Tuple[int, int]]
 
 
@@ -161,7 +180,83 @@ def _extract_tile_bounds(tile: Dict[str, object]) -> Optional[Tuple[float, float
     if None not in (left, bottom, right, top):
         return left, bottom, right, top  # type: ignore[return-value]
 
+    extent = tile.get('extent')
+    if isinstance(extent, list) and len(extent) == 4:
+        parsed = [_to_float(item) for item in extent]
+        if all(item is not None for item in parsed):
+            min_lng, min_lat, max_lng, max_lat = parsed  # type: ignore[assignment]
+            return min_lng, min_lat, max_lng, max_lat
+
+    geometry = tile.get('geometry')
+    if isinstance(geometry, dict):
+        coordinates = geometry.get('coordinates')
+        if isinstance(coordinates, list):
+            flattened: List[Tuple[float, float]] = []
+
+            def _collect_points(node: object) -> None:
+                if not isinstance(node, list):
+                    return
+
+                if len(node) >= 2 and isinstance(node[0], (int, float, str)) and isinstance(node[1], (int, float, str)):
+                    lng = _to_float(node[0])
+                    lat = _to_float(node[1])
+                    if lng is not None and lat is not None:
+                        flattened.append((lng, lat))
+                    return
+
+                for item in node:
+                    _collect_points(item)
+
+            _collect_points(coordinates)
+            if flattened:
+                lng_values = [point[0] for point in flattened]
+                lat_values = [point[1] for point in flattened]
+                return min(lng_values), min(lat_values), max(lng_values), max(lat_values)
+
     return None
+
+
+def _extract_row_col(tile: Dict[str, object]) -> Tuple[Optional[int], Optional[int]]:
+    row_candidates = [tile.get('row'), tile.get('tile_row'), tile.get('r'), tile.get('y'), tile.get('tile_y')]
+    col_candidates = [tile.get('col'), tile.get('tile_col'), tile.get('c'), tile.get('x'), tile.get('tile_x')]
+
+    properties = tile.get('properties')
+    if isinstance(properties, dict):
+        row_candidates.extend(
+            [
+                properties.get('row'),
+                properties.get('tile_row'),
+                properties.get('r'),
+                properties.get('y'),
+                properties.get('tile_y'),
+            ]
+        )
+        col_candidates.extend(
+            [
+                properties.get('col'),
+                properties.get('tile_col'),
+                properties.get('c'),
+                properties.get('x'),
+                properties.get('tile_x'),
+            ]
+        )
+
+    row = next((parsed for candidate in row_candidates if (parsed := _to_int(candidate)) is not None), None)
+    col = next((parsed for candidate in col_candidates if (parsed := _to_int(candidate)) is not None), None)
+    return row, col
+
+
+def _extract_raw_tiles(payload: object) -> List[object]:
+    if isinstance(payload, list):
+        return payload
+
+    if isinstance(payload, dict):
+        for key in ('tiles', 'features', 'items', 'index'):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+
+    return []
 
 
 def _load_tile_index(path: Path = TILE_INDEX_PATH) -> List[Dict[str, object]]:
@@ -173,12 +268,8 @@ def _load_tile_index(path: Path = TILE_INDEX_PATH) -> List[Dict[str, object]]:
     except (OSError, json.JSONDecodeError):
         return []
 
-    raw_tiles: List[object]
-    if isinstance(payload, dict) and isinstance(payload.get('tiles'), list):
-        raw_tiles = payload['tiles']
-    elif isinstance(payload, list):
-        raw_tiles = payload
-    else:
+    raw_tiles = _extract_raw_tiles(payload)
+    if not raw_tiles:
         return []
 
     parsed_tiles: List[Dict[str, object]] = []
@@ -186,17 +277,7 @@ def _load_tile_index(path: Path = TILE_INDEX_PATH) -> List[Dict[str, object]]:
         if not isinstance(tile, dict):
             continue
 
-        row = _to_int(tile.get('row'))
-        if row is None:
-            row = _to_int(tile.get('tile_row'))
-        if row is None:
-            row = _to_int(tile.get('r'))
-
-        col = _to_int(tile.get('col'))
-        if col is None:
-            col = _to_int(tile.get('tile_col'))
-        if col is None:
-            col = _to_int(tile.get('c'))
+        row, col = _extract_row_col(tile)
 
         bounds = _extract_tile_bounds(tile)
         if row is None or col is None or bounds is None:
@@ -218,6 +299,13 @@ def _load_tile_index(path: Path = TILE_INDEX_PATH) -> List[Dict[str, object]]:
         )
 
     return parsed_tiles
+
+
+def _tile_lookup_by_row_col(tile_index: List[Dict[str, object]]) -> Dict[Tuple[int, int], Dict[str, object]]:
+    lookup: Dict[Tuple[int, int], Dict[str, object]] = {}
+    for tile in tile_index:
+        lookup[(int(tile['row']), int(tile['col']))] = tile
+    return lookup
 
 
 def _densify_route(route_coords: List[List[float]], max_step_deg: float = 0.0003) -> List[Tuple[float, float]]:
@@ -463,6 +551,14 @@ def _generate_route_weighted_heat(
     return utci.astype(np.float32)
 
 
+def _write_compute_manifest(date: str, hour: int, route_tiles: List[Tuple[int, int]]) -> None:
+    manifest_dir = RESULTS_DIR / date.replace('-', '') / f'{hour:02d}'
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    manifest_file = manifest_dir / 'compute_manifest.json'
+    payload = HeatComputeManifest(date=date, hour=hour, route_tiles=route_tiles).model_dump()
+    manifest_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
 @app.get('/api/heat/mock', response_model=HeatMockResponse)
 def build_mock_heat_layer(
     date: str = Query(..., description='YYYY-MM-DD'),
@@ -527,35 +623,55 @@ def build_mock_heat_series(
 
     tile_index = _load_tile_index()
     route_tiles = _match_route_tiles(route_coords=route_coords, tile_index=tile_index)
+    tile_lookup = _tile_lookup_by_row_col(tile_index)
 
     route_bbox = _expand_bbox(_bbox_from_route(route_coords), ratio=0.05)
     min_lng, min_lat, max_lng, max_lat = route_bbox
 
     date_folder = date.replace('-', '')
-    items: List[HeatSeriesItem] = []
+    items: List[HeatSeriesHourResult] = []
 
     for hour in parsed_hours:
         hour_folder = f'{hour:02d}'
         output_dir = RESULTS_DIR / date_folder / hour_folder
-        output_dir.mkdir(parents=True, exist_ok=True)
+        tile_output_dir = output_dir / 'tiles'
+        tile_output_dir.mkdir(parents=True, exist_ok=True)
 
-        tif_file = output_dir / 'heat_exposure.tif'
-        png_file = output_dir / 'heat_exposure.png'
+        hour_tile_results: List[HeatTileResult] = []
+        for row, col in route_tiles:
+            tile_meta = tile_lookup.get((row, col))
+            if not tile_meta:
+                continue
 
-        if not (tif_file.exists() and png_file.exists()):
-            seed = _stable_seed(f'{date}-{hour}-{start}-{end}')
-            heat = _generate_route_weighted_heat(seed=seed, bbox=route_bbox, route_coords=route_coords)
-
-            _write_geotiff(heat, tif_file, route_bbox)
-            _write_overlay_png_discrete(heat, png_file)
-
-        items.append(
-            HeatSeriesItem(
-                hour=hour,
-                png_url=f'/results/{date_folder}/{hour_folder}/{png_file.name}',
-                tif_url=f'/results/{date_folder}/{hour_folder}/{tif_file.name}',
+            tile_bbox = (
+                float(tile_meta['min_lng']),
+                float(tile_meta['min_lat']),
+                float(tile_meta['max_lng']),
+                float(tile_meta['max_lat']),
             )
-        )
+
+            tile_prefix = f'r{row}_c{col}'
+            tif_file = tile_output_dir / f'{tile_prefix}.tif'
+            png_file = tile_output_dir / f'{tile_prefix}.png'
+
+            if not (tif_file.exists() and png_file.exists()):
+                seed = _stable_seed(f'{date}-{hour}-{row}-{col}-{start}-{end}')
+                heat = _generate_route_weighted_heat(seed=seed, bbox=tile_bbox, route_coords=route_coords)
+                _write_geotiff(heat, tif_file, tile_bbox)
+                _write_overlay_png_discrete(heat, png_file)
+
+            hour_tile_results.append(
+                HeatTileResult(
+                    row=row,
+                    col=col,
+                    png_url=f'/results/{date_folder}/{hour_folder}/tiles/{png_file.name}',
+                    tif_url=f'/results/{date_folder}/{hour_folder}/tiles/{tif_file.name}',
+                    bounds=((tile_bbox[0], tile_bbox[1]), (tile_bbox[2], tile_bbox[3])),
+                )
+            )
+
+        _write_compute_manifest(date=date, hour=hour, route_tiles=route_tiles)
+        items.append(HeatSeriesHourResult(hour=hour, tiles=hour_tile_results))
 
     return HeatSeriesResponse(
         date=date,
@@ -563,6 +679,34 @@ def build_mock_heat_series(
         bounds=((min_lng, min_lat), (max_lng, max_lat)),
         items=items,
         route_tiles=route_tiles,
+    )
+
+
+@app.get('/api/tiles/route', response_model=TileMatchResponse)
+def get_route_tile_matches(
+    start: str = Query(..., description='lng,lat'),
+    end: str = Query(..., description='lng,lat'),
+    profile: str = Query(default='walking'),
+) -> TileMatchResponse:
+    start_point = _parse_lng_lat(start, 'start')
+    end_point = _parse_lng_lat(end, 'end')
+
+    route_coords = _fetch_route_geometry(start_point, end_point, profile=profile)
+    if route_coords is None:
+        route_coords = [[start_point[0], start_point[1]], [end_point[0], end_point[1]]]
+
+    tile_index = _load_tile_index()
+    route_tiles = _match_route_tiles(route_coords=route_coords, tile_index=tile_index)
+    return TileMatchResponse(route_tiles=route_tiles)
+
+
+@app.get('/api/tiles/index/meta', response_model=TileIndexMetaResponse)
+def get_tile_index_meta() -> TileIndexMetaResponse:
+    tile_index = _load_tile_index()
+    return TileIndexMetaResponse(
+        tile_index_path=str(TILE_INDEX_PATH),
+        file_exists=TILE_INDEX_PATH.exists(),
+        tile_count=len(tile_index),
     )
 
 

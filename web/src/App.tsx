@@ -11,8 +11,13 @@ type Metrics = {
 
 type HeatSeriesItem = {
   hour: number;
-  png_url: string;
-  tif_url: string;
+  tiles: {
+    row: number;
+    col: number;
+    png_url: string;
+    tif_url: string;
+    bounds: [[number, number], [number, number]];
+  }[];
 };
 
 type HeatSeriesResponse = {
@@ -20,6 +25,7 @@ type HeatSeriesResponse = {
   hours: number[];
   bounds: [[number, number], [number, number]];
   items: HeatSeriesItem[];
+  route_tiles: [number, number][];
 };
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/$/, '');
@@ -86,6 +92,7 @@ function App() {
   const [endCoord, setEndCoord] = useState(endInput);
   const [planNonce, setPlanNonce] = useState(0);
   const [showHeatLayer, setShowHeatLayer] = useState(false);
+  const [isHeatSeriesLoading, setIsHeatSeriesLoading] = useState(false);
   const [heatLayerError, setHeatLayerError] = useState<string | null>(null);
 
   const [heatSeries, setHeatSeries] = useState<HeatSeriesResponse | null>(null);
@@ -121,7 +128,16 @@ function App() {
     return heatSeries.items.find((item) => item.hour === selectedHour) ?? null;
   }, [heatSeries, selectedHour]);
 
-  const selectedHeatBounds = heatSeries?.bounds ?? null;
+  const selectedHeatOverlays = useMemo(
+    () =>
+      selectedHeatItem?.tiles.map((tile) => ({
+        row: tile.row,
+        col: tile.col,
+        url: resolveApiUrl(tile.png_url),
+        bounds: tile.bounds
+      })) ?? [],
+    [selectedHeatItem]
+  );
 
   const handlePlanRoute = (event: FormEvent) => {
     event.preventDefault();
@@ -152,7 +168,7 @@ function App() {
     }
   };
 
-  const handleLoadHeatSeries = async () => {
+  const loadHeatSeries = async () => {
     const parsedStart = parseLngLat(startCoord.trim());
     const parsedEnd = parseLngLat(endCoord.trim());
 
@@ -162,6 +178,7 @@ function App() {
     }
 
     setHeatLayerError(null);
+    setIsHeatSeriesLoading(true);
 
     try {
       const response = await requestHeatSeries({
@@ -175,10 +192,29 @@ function App() {
 
       setHeatSeries(response);
       setSelectedHour(response.hours[0] ?? null);
-      setShowHeatLayer(true);
+      return true;
     } catch (_error) {
       setHeatLayerError('API unreachable / CORS blocked');
+      return false;
+    } finally {
+      setIsHeatSeriesLoading(false);
     }
+  };
+
+  const handleHeatConditionToggle = async () => {
+    if (showHeatLayer) {
+      setShowHeatLayer(false);
+      return;
+    }
+
+    if (!heatSeries) {
+      const loaded = await loadHeatSeries();
+      if (!loaded) {
+        return;
+      }
+    }
+
+    setShowHeatLayer(true);
   };
 
   return (
@@ -212,11 +248,19 @@ function App() {
           </form>
 
           <div className="layer-actions">
-            <button type="button" onClick={handleLoadHeatSeries}>
-              Load heat series
-            </button>
-            <button type="button" onClick={() => setShowHeatLayer((value) => !value)}>
-              {showHeatLayer ? 'Hide heat layer' : 'Show heat layer'}
+            <button
+              type="button"
+              className={`heat-toggle-btn ${showHeatLayer ? 'is-on' : 'is-off'}`}
+              onClick={() => {
+                void handleHeatConditionToggle();
+              }}
+              disabled={isHeatSeriesLoading}
+            >
+              {isHeatSeriesLoading
+                ? 'Loading heat condition...'
+                : showHeatLayer
+                  ? 'Show heat condition'
+                  : 'Hide heat condition'}
             </button>
           </div>
 
@@ -233,7 +277,7 @@ function App() {
             }}
             disabled={!heatSeries}
           >
-            {!heatSeries && <option value="">Load heat series first</option>}
+            {!heatSeries && <option value="">Enable heat condition first</option>}
             {heatSeries?.hours.map((hour) => (
               <option key={hour} value={hour}>
                 {hour}:00
@@ -260,8 +304,7 @@ function App() {
             end={endCoord}
             planNonce={planNonce}
             showHeatLayer={showHeatLayer}
-            heatOverlayUrl={selectedHeatItem ? resolveApiUrl(selectedHeatItem.png_url) : null}
-            heatOverlayBounds={selectedHeatBounds}
+            heatOverlays={selectedHeatOverlays}
             onSelectionChange={handleMapSelectionChange}
           />
         </section>
